@@ -1,19 +1,16 @@
-
-class Archive{
-  final String id;
-  final String disasterName;
-  final String title;
-  final String link;
-  final String location;
-  final DateTime created;
+class Archive {
+  final String disasterName; 
+  final String location;     
+  final DateTime created;    
+  final String title;        
+  final String description;  
 
   Archive({
-    required this.id,
     required this.disasterName,
-    required this.title,
-    required this.link,
     required this.location,
     required this.created,
+    required this.title,
+    required this.description,
   });
 }
 

@@ -14,17 +14,15 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
   final ScrollController _scroll = ScrollController();
 
   bool _sending = false;
-
-
   final List<_ChatMessage> _messages = [];
 
   String _formatDate(DateTime dt) =>
-      '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}  ' '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}  '
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
     super.initState();
-    
     final a = widget.archive;
     _messages.add(
       _ChatMessage.bot(
@@ -42,7 +40,6 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
     _scroll.dispose();
     super.dispose();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +77,6 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
                             fg: const Color(0xFFEA580C),
                             border: const Color(0xFFFFD2B8),
                           ),
-
                           _Chip(
                             text: a.location,
                             bg: const Color(0xFFF2F4F7),
@@ -89,21 +85,17 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
                           ),
                         ],
                       ),
-                          const SizedBox(height: 8),
-
-                        Text(
-                          _formatDate(a.created),
-                          style:const TextStyle(
-                          color:Color(0xFF98A2B3),
+                      const SizedBox(height: 8),
+                      Text(
+                        _formatDate(a.created),
+                        style: const TextStyle(
+                          color: Color(0xFF98A2B3),
                           fontSize: 12,
                           height: 1.2,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-
-
-                      
                       const SizedBox(height: 6),
                       Text(
                         a.title,
@@ -137,68 +129,20 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _QuickButton(
-                  label: '주변 대피로',
-                  onTap: () => _onQuickAsk('주변 대피로'),
-                ),
-                _QuickButton(
-                  label: '행동강령',
-                  onTap: () => _onQuickAsk('행동강령'),
-                ),
-                _QuickButton(
-                  label: '실시간 현황',
-                  onTap: () => _onQuickAsk('실시간 현황'),
-                ),
+                _QuickButton(label: '주변 대피로', onTap: () => _onQuickAsk('주변 대피로')),
+                _QuickButton(label: '행동강령', onTap: () => _onQuickAsk('행동강령')),
+                _QuickButton(label: '실시간 현황', onTap: () => _onQuickAsk('실시간 현황')),
               ],
             ),
           ),
 
-          // 입력바
+          // 입력바 (분리된 위젯)
           SafeArea(
             top: false,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              color: Colors.white,
-              child: Row(
-                children: {
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: '메시지를 입력하세요…',
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF94A3B8)),
-                        ),
-                      ),
-                      onSubmitted: (_) => _onSend(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: _sending ? null : _onSend,
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.send_rounded),
-                    label: const Text('전송'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                }.toList(),
-              ),
+            child: _InputBar(
+              controller: _input,
+              sending: _sending,
+              onSend: _onSend,
             ),
           ),
         ],
@@ -206,10 +150,7 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
     );
   }
 
-
-
   Future<void> _onQuickAsk(String label) async {
-
     final a = widget.archive;
     final query = switch (label) {
       '주변 대피로' => '[${a.disasterName}] ${a.location} 기준으로 가까운 대피소/대피로를 알려줘. '
@@ -220,7 +161,6 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
           '(가능하면 공식/공공 데이터 기준, 수치/주의보 단계/예상 변화)',
       _ => '$label에 대해 알려줘.',
     };
-
     await _sendUserThenGetBot(query);
   }
 
@@ -238,9 +178,7 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
     });
     _scrollToBottom();
 
-
     final reply = await _fakeLLM(text, contextInfo: _contextForLLM());
-
 
     if (!mounted) return;
     setState(() {
@@ -259,10 +197,10 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
         '- 제목: ${a.title}\n';
   }
 
-  // 데모용  응답
+  // 데모용 응답
   Future<String> _fakeLLM(String userText, {required String contextInfo}) async {
     await Future.delayed(const Duration(milliseconds: 500));
-   
+
     if (userText.contains('대피') || userText.contains('대피로')) {
       return '가까운 대피 안내(예시)\n'
           '1) ○○구청 대피소 – 서울 ○○구 ○○로 12 – 24시간 – 02-1234-5678 – https://map.example/1\n'
@@ -302,7 +240,68 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
   }
 }
 
+class _InputBar extends StatelessWidget {
+  const _InputBar({
+    required this.controller,
+    required this.sending,
+    required this.onSend,
+  });
 
+  final TextEditingController controller;
+  final bool sending;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      color: Colors.white,
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              key: const ValueKey('chat_input'),     // ✅ 조합 상태 고정
+              controller: controller,
+              minLines: 1,
+              maxLines: 4,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              enableSuggestions: true,
+              autocorrect: true,
+              decoration: InputDecoration(
+                hintText: '메시지를 입력하세요…',
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFF94A3B8)),
+                ),
+              ),
+              onSubmitted: (_) => onSend(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: sending ? null : onSend,
+            icon: sending
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.send_rounded),
+            label: const Text('전송'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ChatBubble extends StatelessWidget {
   const _ChatBubble({required this.msg});
@@ -396,8 +395,6 @@ class _Chip extends StatelessWidget {
     );
   }
 }
-
-
 
 class _ChatMessage {
   final bool isUser;

@@ -1,123 +1,95 @@
-import 'package:flutter/material.dart';
-import 'package:pbl_b_app/screens/list_archive.dart';
+// Material Design 라이브러리를 가져와야 화면 구성을 위한 UI 요소를 활용할 수 있음 
+import 'package:flutter/material.dart'; 
+// 어플리케이션 언어를 설정하는데 필요한 localization 기능을 가져옴
+import 'package:flutter_localizations/flutter_localizations.dart';
+// 사용자에게 보여줄 첫 홈 화면을 가져옴 
+import 'package:pbl_b_app/screens/randing_page.dart';
+import 'package:pbl_b_app/screens/ai_chatbot_archive.dart';
+import 'package:pbl_b_app/screens/onboarding_screen.dart';
+import 'package:pbl_b_app/screens/mypage.dart'; 
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MyApp()); // runApp을 통해 MyApp 클래스를 가장 먼저 실행
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatelessWidget { //StatelessWidget은 앱 실행 시, 해당 클래스의 데이터가 변경되지 않음을 의미함(정적 로고, 앱 제목 등)
   const MyApp({super.key});
 
-  // This widget is the root of your application.
+  
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) { // build 메소드를 통해 화면UI를 알려줘야함
+    // MaterialApp을 통해 어플의 전반적인 테마, 언어, 홈 화면을 정의함 
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
+      title: 'Flutter Demo', // 앱의 제목 
+      locale: const Locale('ko'), // 앱의 기본 언어를 한국어로 설정 
+      supportedLocales: const [Locale('ko'), Locale('en')], //앱이 지원하는 언어를 지정함 
+      localizationsDelegates: GlobalMaterialLocalizations.delegates, // 설정한 언어를 실제 앱에 적용시키기 위한 코드 
+      // ThemeData를 통해 앱의 디자인 테마(색상, 글꼴) 정의
+      theme: ThemeData( 
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const ListArchive(),
+      // home을 통해 앱이 처음 실행될 때 사용자에게 보여줄 홈 화면을 지정함 
+      home: const OnboardingScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
 
-  void _incrementCounter() {
+class _MainScreenState extends State<MainScreen> {
+  int _selectedIndex = 0; // 현재 선택된 탭의 인덱스
+
+  // 보여줄 페이지 리스트를 정의
+  static final List<Widget> _widgetOptions = <Widget>[
+    const RandingPage(), // 홈 페이지
+    const AiChatbotArchivePage(), // AI 챗봇 아카이브
+    const MyPage() // 내정보
+  ];
+
+  void _onItemTapped(int index) {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _selectedIndex = index;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
+        child: _widgetOptions.elementAt(_selectedIndex), 
+
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex, 
+        selectedItemColor: Colors.pink.shade400,
+        unselectedItemColor: Colors.grey.shade600,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        elevation: 10,
+        onTap: _onItemTapped,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_filled),
+            label: '홈', 
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            label: 'AI 챗봇',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            label: '내 정보',
+          ),
+        ],
+      ),
     );
   }
 }
