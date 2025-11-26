@@ -1,10 +1,14 @@
-import 'package:flutter/material.dart'; 
+import 'package:flutter/material.dart';
+import '../models/user_profile.dart';
 
 // StatefulWidget을 선언함으로써, RandingPage에서의 데이터는 변화할 수 있음
 class RandingPage extends StatefulWidget {
-  // super.key를 통해 StatefulWidget에 알림 
-  const RandingPage({super.key});
-  // StatefulWidget은 항상 createState로 상태 클래스를 생성해야함 
+  final UserProfile profile;
+
+  const RandingPage({
+    Key? key,
+    required this.profile,
+  }) : super(key: key);
   @override
   State<RandingPage> createState() => _RandingPageState(); 
 }
@@ -13,9 +17,13 @@ class RandingPage extends StatefulWidget {
 class _RandingPageState extends State<RandingPage> {
 
   @override
+  void initState() {
+    super.initState();
+    // _initializeValues();
+  }
+  @override
   Widget build(BuildContext context){
 
-    // Scaffold는 Material Design 앱의 기본적인 레이아웃 구조를 제공함 
     return Scaffold(
       backgroundColor: Colors.grey[50],
       // SingleChildScrollView를 통해 화면이 작아도 콘텐츠가 잘리지 않도록 설정함
@@ -70,7 +78,8 @@ class _RandingPageState extends State<RandingPage> {
                   Padding(
                     padding: const EdgeInsets.only(left:40.0),
                     child: Text(
-                      '서울시 강남구 역삼동',
+                      widget.profile.currentLocation?.address ??
+                          '서울특별시 강남구 역삼동',
                       style: TextStyle(
                       color: Colors.white.withOpacity(0.9),
                       fontSize:16,
