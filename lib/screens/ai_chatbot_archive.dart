@@ -1,51 +1,31 @@
+// lib/screens/ai_chatbot_archive.dart
+
 import 'package:flutter/material.dart';
+import 'package:pbl_b_app/models/archive.dart';
+import 'package:pbl_b_app/models/archive_list.dart';
+import 'package:pbl_b_app/models/user_profile.dart';
+import 'package:pbl_b_app/screens/chatbot_interact.dart';
 
-import 'package:pbl_b_app/models/archive.dart'; 
+class AiChatbotArchivePage extends StatefulWidget {
+  final UserProfile profile;
 
-import 'package:pbl_b_app/screens/chatbot_interact.dart'; 
+  const AiChatbotArchivePage({
+    super.key,
+    required this.profile,
+  });
 
-class AiChatbotArchivePage extends StatelessWidget {
-  const AiChatbotArchivePage({super.key});
+  @override
+  State<AiChatbotArchivePage> createState() => _AiChatbotArchivePageState();
+}
 
-  // 3. 날짜 포맷을 위한 헬퍼 함수 (chatbot_interact.dart와 동일하게)
+class _AiChatbotArchivePageState extends State<AiChatbotArchivePage> {
   String _formatDate(DateTime dt) =>
       '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')} '
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
-
-
-    final List<Archive> dummyArchives = [
-      Archive(
-        disasterName: '침수 위험',
-        location: '서울특별시 강남구',
-        created: DateTime(2025, 11, 10, 14, 15),
-        title: '서울특별시 강남구 침수 위험',
-        description: 'PBL님이 자주 방문하는 지역에 침수 위험이 발생했어요...',
-      ),
-      Archive(
-        disasterName: '침수 위험',
-        location: '서울특별시 서초구',
-        created: DateTime(2025, 11, 2, 12, 18),
-        title: '서울특별시 서초구 침수 위험',
-        description: 'PBL님의 주거 지역에 침수 위험이 발생했어요...',
-      ),
-      Archive(
-        disasterName: '침수 위험',
-        location: '서울특별시 마포구',
-        created: DateTime(2025, 10, 28, 19, 20),
-        title: '서울특별시 마포구 침수 위험',
-        description: 'PBL님의 부모님 댁 지역에 침수 위험이 발생했어요...',
-      ),
-      Archive(
-        disasterName: '침수 위험',
-        location: '서울특별시 강남구',
-        created: DateTime(2025, 10, 1, 21, 13),
-        title: '서울특별시 강남구 침수 위험',
-        description: 'PBL님이 현재 위치하신 지역에 침수 위험이 발생했어요...',
-      ),
-    ];
+    final List<Archive> archives = archiveList;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -61,90 +41,178 @@ class AiChatbotArchivePage extends StatelessWidget {
         ),
         centerTitle: false,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-    
-            ...dummyArchives.map((archiveItem) {
-              return _buildSurveyCard(
-                context,
-                archive: archiveItem, 
-              );
-            }).toList(),
-            
-            const SizedBox(height: 20.0), 
-          ],
-        ),
-      ),
+      body: archives.isEmpty
+          ? const Center(
+              child: Text(
+                '아직 저장된 재난 히스토리가 없습니다.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  ...archives.map(
+                    (archiveItem) => _buildArchiveCard(
+                      context,
+                      archive: archiveItem,
+                    ),
+                  ),
+                  const SizedBox(height: 20.0),
+                ],
+              ),
+            ),
     );
   }
 
-
-  Widget _buildSurveyCard(
+  Widget _buildArchiveCard(
     BuildContext context, {
     required Archive archive,
   }) {
-    return GestureDetector(
-      onTap: () {
-   
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatbotInteract(archive: archive), 
+    return Stack(
+      children: [
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ChatbotInteract(
+                  archive: archive,
+                  profile: widget.profile, // 🔥 여기서 프로필 전달
+                ),
+              ),
+            );
+          },
+          child: Container(
+            width: double.infinity,
+            margin:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.all(16.0),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12.0),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.08),
+                  spreadRadius: 1,
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _formatDate(archive.created),
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    _ArchiveChip(
+                      text: archive.disasterName,
+                      bg: const Color(0xFFFFE9DB),
+                      fg: const Color(0xFFEA580C),
+                      border: const Color(0xFFFFD2B8),
+                    ),
+                    _ArchiveChip(
+                      text: archive.location,
+                      bg: const Color(0xFFF2F4F7),
+                      fg: const Color(0xFF475567),
+                      border: const Color(0xFFE5E7EB),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  archive.title,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  archive.description,
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 13,
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
-        );
-      },
-      child: Container(
-        height: 130.0,
-        width: double.infinity,
-        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        padding: const EdgeInsets.all(16.0),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12.0),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 1,
-              blurRadius: 5,
-              offset: const Offset(0, 3),
-            ),
-          ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-      
-            Text(
-              _formatDate(archive.created), // 헬퍼 함수로 날짜 포맷
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+        Positioned(
+          right: 28,
+          top: 10,
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                archiveList.remove(archive);
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.04),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close,
+                size: 18,
+                color: Colors.black54,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              archive.title,
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              archive.description,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ArchiveChip extends StatelessWidget {
+  const _ArchiveChip({
+    required this.text,
+    required this.bg,
+    required this.fg,
+    required this.border,
+  });
+
+  final String text;
+  final Color bg;
+  final Color fg;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

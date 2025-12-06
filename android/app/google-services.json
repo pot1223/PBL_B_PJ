@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "242328774848",
+    "project_id": "pbl-b-app",
+    "storage_bucket": "pbl-b-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:242328774848:android:458910b7a093bc0d136525",
+        "android_client_info": {
+          "package_name": "com.example.pbl_b_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcVXmhRcsPINMpFa7l7svFuDUTFuEr1uA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

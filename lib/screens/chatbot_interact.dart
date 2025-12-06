@@ -1,16 +1,47 @@
 import 'package:flutter/material.dart';
 import '../models/archive.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+import '../models/user_profile.dart';  
+
+final Map<String, List<_ChatMessage>> _chatHistory = {};
+
 
 class ChatbotInteract extends StatefulWidget {
   final Archive archive;
-  const ChatbotInteract({super.key, required this.archive});
+  final UserProfile? profile;   //  프로필은 nullable 로 받기
+  
+  const ChatbotInteract({
+    super.key,
+    required this.archive,
+    this.profile,               //  선택 파라미터
+  });
 
   @override
   State<ChatbotInteract> createState() => _ChatbotInteractState();
 }
 
 class _ChatbotInteractState extends State<ChatbotInteract> {
+
+  String _historyKey() {
+    final a = widget.archive;
+    // created + disasterName + location 조합으로 키 생성
+    return '${a.disasterName}_${a.location}_${a.created.toIso8601String()}';
+  }
+
+  void _saveHistory() {
+  final key = _historyKey();
+  // 리스트 복사해서 저장 (참조 꼬이지 않도록)
+  _chatHistory[key] = List<_ChatMessage>.from(_messages);
+}
+
+
+
+  //채팅창 텍스트 제어 
   final TextEditingController _input = TextEditingController();
+
+  // 채팅 목록 스크롤 
   final ScrollController _scroll = ScrollController();
 
   bool _sending = false;
@@ -20,19 +51,55 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
       '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}  '
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
-  @override
-  void initState() {
-    super.initState();
-    final a = widget.archive;
-    _messages.add(
-      _ChatMessage.bot(
-        '안녕하세요! ${a.disasterName} 관련 안내를 도와드릴게요.\n'
-        '• 지역: ${a.location}\n'
-        '• 기준일: ${_formatDate(a.created)}\n\n'
-        '원하시는 정보를 선택하거나, 아래 입력창에 자유롭게 질문해 주세요',
-      ),
-    );
+
+@override
+void initState() {
+  super.initState();
+
+  final key = _historyKey();
+  final existing = _chatHistory[key];
+
+  if (existing != null && existing.isNotEmpty) {
+    // 🔥 기존 히스토리가 있으면 그대로 복구
+    _messages.addAll(existing);
+    // 웰컴 메시지는 또 안 불러도 됨
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
+    });
+  } else {
+    // 처음 들어온 아카이브라면 웰컴 메시지 호출
+    _initWelcomeMessage();
   }
+}
+
+
+Future<void> _initWelcomeMessage() async {
+  // 첫 진입 시 웰컴 메시지 요청
+  setState(() {
+    _sending = true; // 선택: 웰컴 생성 중에는 전송 버튼 비활성화
+  });
+
+  final reply = await _callLLM(
+    '사용자에게 첫 인사/웰컴 메시지를 만들어줘.',
+    contextInfo: _contextForLLM(),  
+    intent: 'welcome',             
+  );
+
+  if (!mounted) return;
+  setState(() {
+    _messages.add(_ChatMessage.bot(reply));
+    _sending = false;
+  });
+  _saveHistory();
+  _scrollToBottom();
+}
+
+
+
+
+
+
+
 
   @override
   void dispose() {
@@ -151,18 +218,28 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
   }
 
   Future<void> _onQuickAsk(String label) async {
-    final a = widget.archive;
-    final query = switch (label) {
-      '주변 대피로' => '[${a.disasterName}] ${a.location} 기준으로 가까운 대피소/대피로를 알려줘. '
-          '가능하면 주소·운영시간·연락처·지도 링크(형식: 이름 – 주소 – 운영시간 – 연락처 – 지도URL)를 요약해서.',
-      '행동강령' => '[${a.disasterName}] 상황에서 지금(기준일: ${_formatDate(a.created)}) '
-          '10분 내로 해야 할 행동 수칙을 단계별로 간단히 알려줘. (응급/일반/교통/전력/통신 포함)',
-      '실시간 현황' => '[${a.disasterName}] 관련 실시간 현황을 요약해줘. '
-          '(가능하면 공식/공공 데이터 기준, 수치/주의보 단계/예상 변화)',
-      _ => '$label에 대해 알려줘.',
-    };
-    await _sendUserThenGetBot(query);
-  }
+  final a = widget.archive;
+
+  // 어떤 버튼인지 → intent 문자열로 구분
+  final intent = switch (label) {
+    '주변 대피로'   => 'shelter',
+    '행동강령'     => 'guideline',
+    '실시간 현황'   => 'realtime',
+    _              => 'general',
+  };
+
+  final query = switch (label) {
+    '주변 대피로' => '${a.location} 기준으로 가까운 대피소/대피로를 알려줘. '
+        '가능하면 주소·운영시간·연락처·지도 링크(형식: 이름 – 주소 – 운영시간 – 연락처 – 지도URL)를 요약해서.',
+    '행동강령' => '${a.disasterName} 상황에서 지금(기준일: ${_formatDate(a.created)}) '
+        '10분 내로 해야 할 행동 수칙을 단계별로 간단히 알려줘. (응급/일반/교통/전력/통신 포함)',
+    '실시간 현황' => '[${a.disasterName}] 관련 실시간 현황을 요약해줘. '
+        '(가능하면 공식/공공 데이터 기준, 수치/주의보 단계/예상 변화)',
+    _ => '$label에 대해 알려줘.',
+  };
+
+  await _sendUserThenGetBot(query, intent: intent);
+}
 
   Future<void> _onSend() async {
     final text = _input.text.trim();
@@ -171,61 +248,133 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
     await _sendUserThenGetBot(text);
   }
 
-  Future<void> _sendUserThenGetBot(String text) async {
-    setState(() {
-      _messages.add(_ChatMessage.user(text));
-      _sending = true;
-    });
-    _scrollToBottom();
 
-    final reply = await _fakeLLM(text, contextInfo: _contextForLLM());
+  Future<void> _sendUserThenGetBot(String text, {String intent = 'general'}) async {
+  setState(() {
+    _messages.add(_ChatMessage.user(text));
+    _sending = true;
+  });
+  _saveHistory();  
+  _scrollToBottom();
 
-    if (!mounted) return;
-    setState(() {
-      _messages.add(_ChatMessage.bot(reply));
-      _sending = false;
-    });
-    _scrollToBottom();
-  }
+  final reply = await _callLLM(
+    text,
+    contextInfo: _contextForLLM(),
+    intent: intent,
+  );
+
+  if (!mounted) return;
+  setState(() {
+    _messages.add(_ChatMessage.bot(reply));
+    _sending = false;
+  });
+  _saveHistory();  
+  _scrollToBottom();
+}
 
   String _contextForLLM() {
+  final a = widget.archive;
+  final p = widget.profile;
+
+  final buffer = StringBuffer();
+
+  buffer.writeln('컨텍스트:');
+  buffer.writeln('- 재난 아카이브 정보:');
+  buffer.writeln('  • 재난 유형(disasterName): ${a.disasterName}');
+  buffer.writeln('  • 지역(location): ${a.location}');
+  buffer.writeln('  • 기준일(created): ${_formatDate(a.created)}');
+  buffer.writeln('  • 제목(title): ${a.title}');
+  buffer.writeln('  • 설명(description): ${a.description}');
+
+  buffer.writeln('');
+  if (p != null) {
+    buffer.writeln('- 사용자 프로필 정보(UserProfile):');
+    buffer.writeln('  • userId: ${p.userId}');
+    buffer.writeln('  • completeness: ${p.completeness}%');
+    buffer.writeln('  • hasPets: ${p.hasPets}');
+    buffer.writeln('  • livesWithFamily: ${p.livesWithFamily}');
+    buffer.writeln('  • hasVehicle: ${p.hasVehicle}');
+    buffer.writeln('  • housingTypeCode: ${p.housingTypeCode}');
+    if (p.currentLocation != null) {
+      final cl = p.currentLocation!;
+      buffer.writeln('  • currentLocation: ${cl.toJson()}');  // 간단히 JSON으로
+    }
+    if (p.interestedAreas.isNotEmpty) {
+      buffer.writeln('  • interestedAreas:');
+      for (final area in p.interestedAreas) {
+        buffer.writeln('    - ${area.toJson()}');
+      }
+    }
+  } else {
+    buffer.writeln('- 사용자 프로필: 없음 (기본 안내 제공)');
+  }
+
+  buffer.writeln('');
+  buffer.writeln('출력 형식: 친근하지만 과하지 않게, 문단/리스트를 적절히 섞어서 한국어로 답변해줘.');
+
+  return buffer.toString();
+  }
+
+  Future<String> _callLLM(
+    String userText, {
+    required String contextInfo,
+    String intent = 'general',
+  }) async {
+    const String endpoint = 'http://10.0.2.2:8000/chat';
+
     final a = widget.archive;
-    return '컨텍스트:\n'
-        '- 재난: ${a.disasterName}\n'
-        '- 지역: ${a.location}\n'
-        '- 기준일: ${_formatDate(a.created)}\n'
-        '- 제목: ${a.title}\n';
+    final p = widget.profile;  // ✅ 추가
+
+    try {
+      final uri = Uri.parse(endpoint);
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          // 1) 사용자의 실제 입력
+          'message': userText,
+
+          // 2) 프론트에서 정리한 컨텍스트(문자열)
+          'context': contextInfo,
+
+          // 3) intent로 상황 구분 (welcome / general / shelter / guideline / realtime 등)
+          'intent': intent,
+
+          // 4) 구조화된 재난 아카이브 정보
+          'archive': {
+            'disaster_name': a.disasterName,
+            'location': a.location,
+            'created': a.created.toIso8601String(),
+            'description': a.description,
+            'title': a.title,
+          },
+
+          // 5) 구조화된 사용자 프로필 정보 (nullable)
+          'profile': p?.toJson(),
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        return '서버 오류가 발생했습니다. (status: ${response.statusCode})\n${response.body}';
+      }
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final reply = json['reply'] as String?;
+      if (reply == null || reply.isEmpty) {
+        return '서버 응답 파싱 중 오류가 발생했습니다.';
+      }
+      return reply;
+    } catch (e) {
+      return '서버에 연결할 수 없습니다: $e';
+    }
   }
 
-  // 데모용 응답
-  Future<String> _fakeLLM(String userText, {required String contextInfo}) async {
-    await Future.delayed(const Duration(milliseconds: 500));
 
-    if (userText.contains('대피') || userText.contains('대피로')) {
-      return '가까운 대피 안내(예시)\n'
-          '1) ○○구청 대피소 – 서울 ○○구 ○○로 12 – 24시간 – 02-1234-5678 – https://map.example/1\n'
-          '2) ○○문화센터 – 서울 ○○구 ○○길 34 – 09:00~22:00 – 02-2345-6789 – https://map.example/2\n'
-          '\n※ 실서비스에서는 실제 공공데이터/API 연동으로 갱신됩니다.';
-    }
-    if (userText.contains('행동') || userText.contains('수칙')) {
-      return '즉시 행동 수칙(예시)\n'
-          '• 0~10분: 전원/가스 차단, 저지대/지하 피하기\n'
-          '• 가족/동료와 위치 공유, 비상연락망 확인\n'
-          '• 이동 시 차량보다 도보 우선, 침수 구역 접근 금지';
-    }
-    if (userText.contains('실시간') || userText.contains('현황')) {
-      return '실시간 현황(예시)\n'
-          '• 주의보 단계: 호우 주의보\n'
-          '• 강수량(1시간): 18mm\n'
-          '• 하천 수위: 평시 대비 +0.3m\n'
-          '※ 데모 값이며, 실제에선 공공API/센서 연동';
-    }
-    // 일반 답변
-    return '문의하신 내용에 대해 확인했습니다.\n'
-        '컨텍스트 요약:\n$contextInfo\n'
-        '요청: 「$userText」\n'
-        '→ 데모 응답입니다. 실제 서비스에서는 LLM이 문맥에 맞게 상세 답변을 제공합니다.';
-  }
+
+
+
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -239,6 +388,7 @@ class _ChatbotInteractState extends State<ChatbotInteract> {
     });
   }
 }
+
 
 class _InputBar extends StatelessWidget {
   const _InputBar({

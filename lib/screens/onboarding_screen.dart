@@ -1,139 +1,311 @@
 import 'package:flutter/material.dart';
-import 'package:pbl_b_app/main.dart'; 
+import '../services/hive_service.dart';
+import '../models/user_profile.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
-
+/// 온보딩 화면 (권한 설정만 포함)
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key});
+  final HiveService hiveService;
+
+  /// 온보딩이 끝났을 때, 생성/로드된 UserProfile을 상위(MyApp)에 전달하는 콜백
+  final void Function(UserProfile profile) onFinished;
+
+  const OnboardingScreen({
+    Key? key,
+    required this.hiveService,
+    required this.onFinished,
+  }) : super(key: key);
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  // PageView를 제어하기 위한 컨트롤러
-  final PageController _pageController = PageController();
-  // 현재 페이지 인덱스 (0, 1, 2)
-  int _currentPage = 0;
+  bool _isLoading = true;
+  UserProfile? _profile;
 
-  // 각 단계에서 선택된 값을 저장할 변수
-  String? _selectedLevel;
-  String? _selectedPlace;
+  /// 각각의 권한 선택(허용) 상태
+  bool _locationSelected = false;
+  bool _notificationSelected = false;
 
-  // 온보딩을 완료하고 메인 화면으로 이동
+  /// 둘 중 하나라도 허용되면 true
+  bool get _canFinish => _locationSelected || _notificationSelected;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeProfile();
+  }
+
+  /// 프로필 초기화
+  /// - 로컬에 프로필이 있으면: 기존 프로필 사용
+  /// - 로컬에 프로필이 없으면: 기본값으로 새로 생성
+  Future<void> _initializeProfile() async {
+    try {
+      // 프로필 확인 및 생성
+      final profile = await widget.hiveService.getOrCreateProfile('user_001');
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _isLoading = false;
+      });
+
+      // 프로필 정보 출력
+      _printProfileInfo(profile);
+    } catch (e) {
+      print('❌ 프로필 초기화 실패: $e');
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+  bool _isRequestingLocation = false;
+  /// 위치 권한 요청
+  Future<void> _requestLocationPermission() async {
+    if (_isRequestingLocation) return; // ⬅️ 동시에 여러 번 눌리는 것 방지
+    _isRequestingLocation = true;
+    try {
+      // 위치 서비스 켜져 있는지 확인
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        print('⚠️ 위치 서비스가 꺼져 있습니다.');
+        // 필요하면 여기서 설정 화면으로 유도하는 로직 추가 가능
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      final granted =
+          permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+      if (!mounted) return;
+      setState(() {
+        _locationSelected = granted;
+      });
+
+      print('📍 위치 권한 상태: $permission');
+    } catch (e) {
+      print('❌ 위치 권한 요청 중 오류: $e');
+    }
+  }
+
+  /// 알림 권한 요청
+  Future<void> _requestNotificationPermission() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      final granted =
+          settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+      if (!mounted) return;
+      setState(() {
+        _notificationSelected = granted;
+      });
+
+      print('🔔 알림 권한 상태: ${settings.authorizationStatus}');
+    } catch (e) {
+      print('❌ 알림 권한 요청 중 오류: $e');
+    }
+  }
+
+  /// 프로필 정보 출력 (디버그용)
+  void _printProfileInfo(UserProfile profile) {
+    final exists = widget.hiveService.hasProfile();
+    print('═══════════════════════════════════════');
+    print(exists ? '✅ 기존 프로필 로드됨' : '🆕 새 프로필 생성됨');
+    print('═══════════════════════════════════════');
+    print('User ID: ${profile.userId}');
+    print('프로필 완성도: ${profile.completeness}%');
+    print('반려동물: ${profile.hasPets}');
+    print('가족 동거: ${profile.livesWithFamily}');
+    print('주거 유형: ${profile.housingType.displayName}');
+    print('차량 소유: ${profile.hasVehicle}');
+    print('═══════════════════════════════════════');
+  }
+
   void _finishOnboarding() {
+    if (_profile == null) {
+      print('❌ 프로필이 없습니다!');
+      return;
+    }
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const MainScreen()),
-    );
+    print('🎉 온보딩 완료 - 상위(MyApp)에 프로필 전달');
+
+    // 이제는 상위(MyApp)에 "끝났어!" 라고 통보
+    widget.onFinished(_profile!);
   }
-
-  // 페이지가 변경될 때 호출
-  void _onPageChanged(int page) {
-    setState(() {
-      _currentPage = page;
-    });
-  }
-
-  // 다음 페이지로 이동
-  void _nextPage() {
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  // 이전 페이지로 이동
-  void _previousPage() {
-    _pageController.previousPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
 
   @override
   Widget build(BuildContext context) {
-    
     const Color darkBgColor = Color.fromRGBO(248, 205, 219, 1);
-    
-    const Color darkButtonColor =  Color.fromRGBO(248, 205, 219, 1);
-    
-    const Color highlightColor = Color(0xFF30D158); // 이미지의 녹색과 유사하게
+    const Color highlightColor = Color(0xFF30D158);
 
+    // 로딩 중일 때
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: darkBgColor,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: highlightColor),
+              SizedBox(height: 16),
+              Text(
+                '프로필 확인 중...',
+                style: TextStyle(color: Colors.black, fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 프로필 초기화 실패 시
+    if (_profile == null) {
+      return Scaffold(
+        backgroundColor: darkBgColor,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                '프로필을 불러올 수 없습니다',
+                style: TextStyle(color: Colors.black, fontSize: 18),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: _initializeProfile,
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 온보딩 화면
     return Scaffold(
       backgroundColor: darkBgColor,
       appBar: AppBar(
         backgroundColor: darkBgColor,
         elevation: 0,
-        // 1. 뒤로 가기 버튼 (첫 페이지가 아닐 때만 보임)
-        leading: _currentPage == 0
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-                onPressed: _previousPage,
-              ),
-        // 2. 제목 (페이지마다 다르게 표시)
-        title: Text(
-          _currentPage == 0
-              ? '권한 설정'
-              : _currentPage == 1
-                  ? '맞춤 정보'
-                  : '관심 지역',
-          style: const TextStyle(
+        title: const Text(
+          '권한 설정',
+          style: TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
-        // 3. 건너뛰기 버튼 (마지막 페이지일 때만 보임)
-        actions: [
-          if (_currentPage == 2)
-            TextButton(
-              onPressed: _finishOnboarding, // 건너뛰기
-              child: const Text(
-                '건너뛰기',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ),
-        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24.0),
         child: Column(
           children: [
-            // --- 1. 진행도 표시 바 (Progress Bar) ---
-            Row(
-              children: List.generate(3, (index) {
-                return Expanded(
-                  child: Container(
-                    height: 4.0,
-                    margin: const EdgeInsets.symmetric(horizontal: 2.0),
-                    decoration: BoxDecoration(
-                      color:
-                          index <= _currentPage ? highlightColor : darkButtonColor,
-                      borderRadius: BorderRadius.circular(2.0),
-                    ),
-                  ),
-                );
-              }),
+            // 진행도 표시 바
+            Container(
+              height: 4.0,
+              decoration: BoxDecoration(
+                color: highlightColor,
+                borderRadius: BorderRadius.circular(2.0),
+              ),
             ),
             const SizedBox(height: 32),
 
-            // --- 2. 페이지 뷰 (화면 전환 영역) ---
+            // 컨텐츠
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: _onPageChanged,
-                physics:
-                    const NeverScrollableScrollPhysics(), 
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  
-                  _buildStep1Page(),
-                 
-                  _buildStep2Page(),
-                 
-                  _buildStep3Page(),
+                  const Text(
+                    '위치 정보와 알림 권한이 필요합니다',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '안전한 대피를 위해 권한을 설정해주세요',
+                    style: TextStyle(color: Colors.black, fontSize: 14),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // 위치 권한 버튼
+                  _buildOptionButton(
+                    title: '위치권한',
+                    subtitle: '실시간 위험도 확인',
+                    isSelected: _locationSelected,
+                    onTap: () async {
+                      await _requestLocationPermission();
+                    },
+                  ),
+
+                  // 알림 권한 버튼
+                  _buildOptionButton(
+                    title: '알림권한',
+                    subtitle: '긴급 상황 알림',
+                    isSelected: _notificationSelected,
+                    onTap: () async {
+                      await _requestNotificationPermission();
+                    },
+                  ),
+
+                  const Spacer(),
+
+                  // 시작하기 버튼 (하나라도 허용되면 활성화)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _canFinish ? _finishOnboarding : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            _canFinish ? highlightColor : Colors.grey,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        '시작하기',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 건너뛰기 버튼 (원하면 여기도 조건 걸 수 있음)
+                  Center(
+                    child: TextButton(
+                      onPressed: _finishOnboarding,
+                      child: const Text(
+                        '건너뛰기',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -143,141 +315,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
- 
-  Widget _buildStep1Page() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '위치 정보와 알림 권한이 필요합니다',
-          style: TextStyle(
-              color: Colors.black, fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '안전한 대피를 위해 권한을 설정해주세요',
-          style: TextStyle(color: Colors.black, fontSize: 14),
-        ),
-        const SizedBox(height: 32),
-        _buildOptionButton(
-          title: '위치권한',
-          subtitle: '실시간 위험도 확인',
-          isSelected: _selectedLevel == '위치권한',
-          onTap: () {
-            setState(() => _selectedLevel = '위치권한');
-            Future.delayed(const Duration(milliseconds: 200), _nextPage);
-          },
-        ),
-        _buildOptionButton(
-          title: '알림권한',
-          subtitle: '긴급 상황 알림',
-          isSelected: _selectedLevel == '알림권한',
-          onTap: () {
-            setState(() => _selectedLevel = '알림권한');
-            Future.delayed(const Duration(milliseconds: 200), _nextPage);
-          },
-        ),
-      ],
-    );
-  }
-
- 
-  Widget _buildStep2Page() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '사용자 맞춤 정보를 알려주세요',
-          style: TextStyle(
-              color: Colors.black, fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '더 안전한 대피를 위한 정보입니다',
-          style: TextStyle(color: Colors.black, fontSize: 14),
-        ),
-        const SizedBox(height: 32),
-        _buildOptionButton(
-          title: '이동에 도움이 필요해요(휠체어 등)',
-          isSelected: _selectedPlace == '이동불편',
-          onTap: () {
-            setState(() => _selectedPlace = '이동불편');
-            
-            Future.delayed(const Duration(milliseconds: 200), _nextPage);
-          },
-        ),
-        _buildOptionButton(
-          title: '반려동물이 있어요',
-          isSelected: _selectedPlace == '반려동물',
-          onTap: () {
-            setState(() => _selectedPlace = '반려동물');
-            
-            Future.delayed(const Duration(milliseconds: 200), _nextPage);
-          },
-        ),
-      ],
-    );
-  }
-
-
-  Widget _buildStep3Page() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '관심 지역을 알려주세요',
-          style: TextStyle(
-              color: Colors.black, fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '자주 다니는 지역, 거주지 등 관심 지역을 설정해주세요',
-          style: TextStyle(color: Colors.black, fontSize: 14),
-        ),
-        const SizedBox(height: 32),
-        
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Color.fromARGB(255, 207, 31, 107),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.search, color: Colors.white),
-              const SizedBox(width: 12),
-              Text(
-                '주소 검색하면 더 빠르게 찾을 수 있어요!',
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-          _buildOptionButton(
-          title: '저장하기',
-          isSelected: _selectedPlace == '저장하기',
-          onTap: () {
-            setState(() => _selectedPlace = '저장하기');
-            
-            Future.delayed(const Duration(milliseconds: 200), _finishOnboarding );
-          },
-        ),
-      ],
-    );
-  }
-
-
+  /// 옵션 버튼 위젯
   Widget _buildOptionButton({
     required String title,
     String? subtitle,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    
-    final Color bgColor =
-        isSelected ? const Color(0xFF30D158) :  Color.fromARGB(255, 170, 4, 76);
+    final Color bgColor = isSelected
+        ? const Color(0xFF30D158)
+        : const Color.fromARGB(255, 170, 4, 76);
     final Color titleColor = isSelected ? Colors.black : Colors.white;
-    final Color subtitleColor = isSelected ? Colors.black87 : Colors.grey[400]!;
+    final Color subtitleColor =
+        isSelected ? Colors.black87 : Colors.grey[400]!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),

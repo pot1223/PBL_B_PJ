@@ -1,4 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<!-- 안드로이드 10+에서 백그라운드 위치용 -->
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+<!-- Foreground 위치 -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+
+<!-- WorkManager가 백그라운드에서 깨우기 위해 추천되는 퍼미션들 -->
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:label="pbl_b_app"
         android:name="${applicationName}"
