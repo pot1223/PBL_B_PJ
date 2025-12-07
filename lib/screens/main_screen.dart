@@ -67,6 +67,7 @@ class _MainScreenState extends State<MainScreen> {
       // 🚨 여기서 프로필 넘겨주기
       AiChatbotArchivePage(
         profile: _currentProfile,
+        hiveService: widget.hiveService,
       ),
       MyPage(
         profile: _currentProfile,

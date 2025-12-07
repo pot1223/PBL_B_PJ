@@ -1,5 +1,5 @@
 // lib/screens/ai_chatbot_archive.dart
-
+import 'package:pbl_b_app/services/hive_service.dart';
 import 'package:flutter/material.dart';
 import 'package:pbl_b_app/models/archive.dart';
 import 'package:pbl_b_app/models/archive_list.dart';
@@ -8,10 +8,12 @@ import 'package:pbl_b_app/screens/chatbot_interact.dart';
 
 class AiChatbotArchivePage extends StatefulWidget {
   final UserProfile profile;
+  final HiveService hiveService;
 
   const AiChatbotArchivePage({
     super.key,
     required this.profile,
+    required this.hiveService,
   });
 
   @override
@@ -73,12 +75,13 @@ class _AiChatbotArchivePageState extends State<AiChatbotArchivePage> {
       children: [
         GestureDetector(
           onTap: () {
+            final latestProfile = widget.hiveService.getProfile() ?? widget.profile;
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => ChatbotInteract(
                   archive: archive,
-                  profile: widget.profile, // 🔥 여기서 프로필 전달
+                  profile: latestProfile, // 🔥 여기서 프로필 전달
                 ),
               ),
             );

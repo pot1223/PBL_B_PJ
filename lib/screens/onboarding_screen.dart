@@ -91,8 +91,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
       print('📍 위치 권한 상태: $permission');
     } catch (e) {
-      print('❌ 위치 권한 요청 중 오류: $e');
+      print('❌ 위치 권한 요청 중 오류: $e');} finally{
+      _isRequestingLocation = false;  // ⬅️ 이거 추가
     }
+  
   }
 
   /// 알림 권한 요청

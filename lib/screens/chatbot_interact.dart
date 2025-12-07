@@ -234,7 +234,7 @@ Future<void> _initWelcomeMessage() async {
     '행동강령' => '${a.disasterName} 상황에서 지금(기준일: ${_formatDate(a.created)}) '
         '10분 내로 해야 할 행동 수칙을 단계별로 간단히 알려줘. (응급/일반/교통/전력/통신 포함)',
     '실시간 현황' => '[${a.disasterName}] 관련 실시간 현황을 요약해줘. '
-        '(가능하면 공식/공공 데이터 기준, 수치/주의보 단계/예상 변화)',
+        '(가능하면 가장 최신의 정보를 알려줘)',
     _ => '$label에 대해 알려줘.',
   };
 
@@ -323,7 +323,7 @@ Future<void> _initWelcomeMessage() async {
     const String endpoint = 'http://10.0.2.2:8000/chat';
 
     final a = widget.archive;
-    final p = widget.profile;  // ✅ 추가
+    final p = widget.profile; 
 
     try {
       final uri = Uri.parse(endpoint);

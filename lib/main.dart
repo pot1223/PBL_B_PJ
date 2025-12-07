@@ -1,4 +1,7 @@
 // ================== 공용 import ==================
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -12,9 +15,6 @@ import 'package:http/http.dart' as http;
 // 위치
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-
-// JSON
-import 'dart:convert';
 
 // 앱 내부 파일
 import 'package:pbl_b_app/screens/onboarding_screen.dart';
@@ -43,7 +43,7 @@ Future<void> main() async {
 
   final hiveService = HiveService();
   await hiveService.initialize();
-  await hiveService.clearAll();
+
   runApp(MyApp(hiveService: hiveService));
 }
 
@@ -70,11 +70,13 @@ class _MyAppState extends State<MyApp> {
     if (existingProfile != null) {
       _profile = existingProfile;
       _onboardingFinished = true;
+
+      // 앱이 켜질 때 FCM/위치까지 바로 하고 싶으면 여기에 추가로 설정 가능
+      _safeSetupFCMAndLocation(existingProfile);
     }
   }
 
   // ---------- 행정구 영어 → 한글 매핑 ----------
-
   String _toKoreanAdminName(String name) {
     if (name.isEmpty) return name;
 
@@ -94,7 +96,7 @@ class _MyAppState extends State<MyApp> {
       // 필요하면 계속 추가
     };
 
-    // 1) 완전 일치 우선
+    // 1) 완전 일치
     if (mapping.containsKey(name)) return mapping[name]!;
 
     // 2) 'Yeongdeungpo-gu, Seoul' 같은 복합 문자열
@@ -113,8 +115,9 @@ class _MyAppState extends State<MyApp> {
     return name; // 모르는 건 그대로 반환
   }
 
-  // ---------- 위치/지역 처리 공통 유틸 ----------
+  // ---------- 위치/권한 유틸 ----------
 
+  // 위치 서비스 & 권한 확인 + 좌표 얻기
   Future<Position> _determinePosition() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -122,13 +125,19 @@ class _MyAppState extends State<MyApp> {
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever ||
+        permission == LocationPermission.denied) {
       throw Exception('위치 권한이 없습니다. 온보딩에서 권한을 허용해주세요.');
     }
 
     return Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 10),
     );
   }
 
@@ -147,14 +156,33 @@ class _MyAppState extends State<MyApp> {
     return settings.authorizationStatus == AuthorizationStatus.authorized ||
         settings.authorizationStatus == AuthorizationStatus.provisional;
   }
+  /// 위치 권한을 실제로 요청해 보고, 최종 결과를 true/false로 리턴
+  Future<bool> _ensureLocationPermission() async {
+    LocationPermission permission = await Geolocator.checkPermission();
 
-  /// ✅ 공통: Position → CurrentLocation (주소는 best-effort, 실패해도 좌표는 살려둠)
-  Future<CurrentLocation> _buildCurrentLocationFromPosition(
+    if (permission == LocationPermission.denied) {
+      // 👉 여기서 실제 안드로이드 권한 팝업이 뜬다
+      permission = await Geolocator.requestPermission();
+    }
+
+    // 사용자가 "다시는 묻지 않음" 또는 완전 차단한 상태
+    if (permission == LocationPermission.deniedForever) {
+      debugPrint('위치 권한이 영구적으로 거부됨. 설정에서 직접 허용 필요');
+      return false;
+    }
+
+    return permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse;
+  }
+
+
+
+
+    Future<CurrentLocation> _buildCurrentLocationFromPosition(
       Position position) async {
     String address = '알 수 없는 위치';
 
     try {
-      // geocoding 3.x: 전역 locale 설정
       await setLocaleIdentifier('ko_KR');
 
       final placemarks = await placemarkFromCoordinates(
@@ -164,20 +192,45 @@ class _MyAppState extends State<MyApp> {
 
       if (placemarks.isNotEmpty) {
         final place = placemarks.first;
-        String city = place.locality ?? '';
-        String district = place.subLocality ?? '';
 
+        // 디버깅용으로 한 번 전체 필드 찍어보기
+        debugPrint(
+            'GEOCODING place: admin=${place.administrativeArea}, '
+            'subAdmin=${place.subAdministrativeArea}, '
+            'locality=${place.locality}, '
+            'subLocality=${place.subLocality}, '
+            'thoroughfare=${place.thoroughfare}, '
+            'subThoroughfare=${place.subThoroughfare}');
+
+        // 여러 후보를 모아서, 비어있지 않은 것들만 순서대로 사용
+        final parts = <String>[];
+
+        String admin = place.administrativeArea ?? '';        // 서울특별시
+        String subAdmin = place.subAdministrativeArea ?? '';  // 영등포구, 성남시 등
+        String city = place.locality ?? '';                   // 어떤 기기에서는 여기 구/시가 오기도 함
+        String district = place.subLocality ?? '';            // 동 단위가 올 수도 있고, 아예 비어있기도 함
+
+        // 영어 -> 한글 매핑 한 번씩 걸어주기
+        admin = _toKoreanAdminName(admin);
+        subAdmin = _toKoreanAdminName(subAdmin);
         city = _toKoreanAdminName(city);
         district = _toKoreanAdminName(district);
 
-        final combined = '$city $district'.trim();
+        // 순서는 상황에 따라 맞추고, 비어있지 않은 것만 추가
+        if (admin.isNotEmpty) parts.add(admin);
+        if (subAdmin.isNotEmpty && !parts.contains(subAdmin)) parts.add(subAdmin);
+        if (city.isNotEmpty && !parts.contains(city)) parts.add(city);
+        if (district.isNotEmpty && !parts.contains(district)) parts.add(district);
+
+        final combined = parts.join(' ').trim();
+
         if (combined.isNotEmpty) {
           address = combined;
         }
       }
-    } catch (e) {
-      // 여기서 나는 에러는 역지오코딩 실패만 의미 (좌표는 이미 있음)
+    } catch (e, st) {
       debugPrint('⚠️ 역지오코딩 실패(주소만 기본값 사용): $e');
+      debugPrint('$st');
     }
 
     return CurrentLocation(
@@ -188,12 +241,19 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  // ✅ 현재 GPS → CurrentLocation → 프로필에 저장
+
+
+  /// ✅ 현재 GPS → CurrentLocation → 프로필에 저장 (좌표만으로도 동작, 예외 안전)
   Future<UserProfile> _updateCurrentLocationInProfile(
       UserProfile profile) async {
+    debugPrint('LOC1: _updateCurrentLocationInProfile 시작');
     try {
       final position = await _determinePosition();
+      debugPrint('LOC2: Position 획득: ${position.latitude}, ${position.longitude}');
+
+      // 역지오코딩까지 포함하고 싶으면 아래 한 줄로 교체
       final currentLoc = await _buildCurrentLocationFromPosition(position);
+
 
       final updated = profile.copyWith(
         currentLocation: currentLoc,
@@ -201,16 +261,19 @@ class _MyAppState extends State<MyApp> {
 
       await widget.hiveService.saveProfile(updated);
 
-      debugPrint('✅ currentLocation 업데이트: $currentLoc');
+      debugPrint('LOC3: currentLocation 저장 완료: $currentLoc');
       return updated;
-    } catch (e) {
-      // 여기까지 오면 진짜로 Position 자체를 못 가져온 케이스
-      debugPrint('❌ 현재 위치 업데이트 실패(좌표 획득 실패): $e');
+    } on TimeoutException {
+      debugPrint('LOC_ERR: 위치 조회 타임아웃');
+      return profile;
+    } catch (e, st) {
+      debugPrint('LOC_ERR: 현재 위치 업데이트 중 예외: $e');
+      debugPrint('$st');
       return profile;
     }
   }
 
-  // 위도/경도 → region 문자열 (FCM 등록용)
+  // 위도/경도/저장값 → region 문자열 (FCM 등록용)
   Future<String> _getRegionFromLocation() async {
     try {
       // 0) 이미 저장된 프로필의 currentLocation이 있으면 우선 사용
@@ -225,7 +288,7 @@ class _MyAppState extends State<MyApp> {
       // 1) 좌표 새로 가져오기
       final position = await _determinePosition();
 
-      // 2) Position → CurrentLocation 공통 로직 재사용
+      // 2) Position → CurrentLocation (역지오코딩 포함)
       final currentLoc = await _buildCurrentLocationFromPosition(position);
 
       if (currentLoc.address.isEmpty ||
@@ -233,24 +296,31 @@ class _MyAppState extends State<MyApp> {
         return '알 수 없는 지역';
       }
       return currentLoc.address;
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('위치 기반 region 가져오기 실패: $e');
+      debugPrint('$st');
       return '알 수 없는 지역';
     }
   }
 
   // ---------- FCM 관련 ----------
+
   Future<void> _setupFCM() async {
     final messaging = FirebaseMessaging.instance;
 
-    final token = await messaging.getToken();
+    try {
+      final token = await messaging.getToken();
 
-    if (token != null) {
-      final region = await _getRegionFromLocation();
-      await _registerDevice(region: region, fcmToken: token);
-      debugPrint('디바이스 등록 및 FCM 설정 완료 (region: $region)');
-    } else {
-      debugPrint('⚠️ FCM 토큰을 가져오지 못했습니다.');
+      if (token != null) {
+        final region = await _getRegionFromLocation();
+        await _registerDevice(region: region, fcmToken: token);
+        debugPrint('✅ 디바이스 등록 및 FCM 설정 완료 (region: $region)');
+      } else {
+        debugPrint('⚠️ FCM 토큰을 가져오지 못했습니다.');
+      }
+    } catch (e, st) {
+      debugPrint('FCM 설정 중 에러: $e');
+      debugPrint('$st');
     }
 
     // 앱이 완전히 꺼져있다가 푸시 클릭
@@ -272,6 +342,36 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  // FCM + 위치를 안전하게 한 번에 설정
+  Future<void> _safeSetupFCMAndLocation(UserProfile profile) async {
+    try {
+      final hasLocation = await _ensureLocationPermission();
+      final hasNotification = await _hasNotificationPermission();
+
+      debugPrint('SAFE_SETUP: hasLocation=$hasLocation, hasNotification=$hasNotification');
+
+      UserProfile finalProfile = profile;
+
+      if (hasLocation) {
+        finalProfile = await _updateCurrentLocationInProfile(profile);
+        if (mounted) {
+          setState(() {
+            _profile = finalProfile;
+          });
+        }
+      }
+
+      if (hasNotification) {
+        await _setupFCM();
+      } else {
+        debugPrint('SAFE_SETUP: FCM 설정 스킵 (noti:$hasNotification)');
+      }
+    } catch (e, st) {
+      debugPrint('SAFE_SETUP 에러: $e');
+      debugPrint('$st');
+    }
+  }
+
   // ---------- 서버에 디바이스 등록 ----------
   Future<void> _registerDevice({
     required String region,
@@ -288,8 +388,9 @@ class _MyAppState extends State<MyApp> {
         }),
       );
       debugPrint('register-device 응답: ${res.statusCode} ${res.body}');
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('register-device 에러: $e');
+      debugPrint('$st');
     }
   }
 
@@ -350,29 +451,30 @@ class _MyAppState extends State<MyApp> {
 
   // ---------- 온보딩 완료 처리 ----------
   Future<void> _handleOnboardingFinished(UserProfile profile) async {
-    // 이 State가 아직 살아있는지 먼저 확인
     if (!mounted) return;
 
-    // 1) 일단 상태에 저장
+    print('STEP1: _handleOnboardingFinished 시작');
+
     setState(() {
       _onboardingFinished = true;
       _profile = profile;
     });
 
-    // 2) 권한 확인
-    final hasLocation = await _hasLocationPermission();
-    final hasNotification = await _hasNotificationPermission();
+    final hasLocation = await _ensureLocationPermission();
+    print('STEP2: hasLocation = $hasLocation');
 
-    // await 뒤에서도 여전히 살아있는지 한 번 더 체크
+    final hasNotification = await _hasNotificationPermission();
+    print('STEP3: hasNotification = $hasNotification');
+
     if (!mounted) return;
 
     UserProfile finalProfile = profile;
 
-    // 3) 위치 권한이 있으면 currentLocation을 실제로 채워 넣기
     if (hasLocation) {
+      print('STEP4: _updateCurrentLocationInProfile 호출 전');
       finalProfile = await _updateCurrentLocationInProfile(profile);
+      print('STEP5: _updateCurrentLocationInProfile 완료');
 
-      // 여기서도 혹시 모를 상황 대비
       if (!mounted) return;
 
       setState(() {
@@ -380,17 +482,14 @@ class _MyAppState extends State<MyApp> {
       });
     }
 
-    // 4) FCM 설정
-    if (hasLocation && hasNotification) {
+    if (hasNotification) {
+      print('STEP6: _setupFCM 호출 전');
       await _setupFCM();
-      // 여기선 setState 안 쓰니까 mounted 체크는 선택 사항
+      print('STEP7: _setupFCM 완료');
     } else {
-      debugPrint('⚠️ 위치/알림 권한 부족으로 FCM 설정을 건너뜁니다.');
-      debugPrint(' - 위치 권한: $hasLocation');
-      debugPrint(' - 알림 권한: $hasNotification');
+      print('STEPx: FCM 건너뜀 (noti:$hasNotification)');
     }
   }
-
 
   @override
   Widget build(BuildContext context) {

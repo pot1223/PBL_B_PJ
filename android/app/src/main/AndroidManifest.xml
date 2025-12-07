@@ -7,7 +7,10 @@
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.INTERNET" />
 
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
 <!-- WorkManager가 백그라운드에서 깨우기 위해 추천되는 퍼미션들 -->
 <uses-permission android:name="android.permission.WAKE_LOCK" />
