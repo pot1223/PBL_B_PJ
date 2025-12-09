@@ -1,6 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:excel/excel.dart' hide Border;
 import '../models/user_profile.dart';
-import '../models/interested_area.dart';
+import '../models/shelter.dart';
 
 class RandingPage extends StatefulWidget {
   final UserProfile profile;
@@ -15,65 +20,143 @@ class RandingPage extends StatefulWidget {
 }
 
 class _RandingPageState extends State<RandingPage> {
+  InAppWebViewController? _webViewController;
+  bool _isMapLoading = true;
+  List<Shelter> allShelters = [];
+  List<Shelter> nearbyShelters = [];
+
+  final double searchRadiusKm = 1.0; // 검색 반경 1km
+
+  @override
+  void initState() {
+    super.initState();
+    _loadShelters();
+  }
+
+  Future<void> _loadShelters() async {
+    try {
+      final bytes = await rootBundle.load('assets/shelter.xlsx');
+      final excel = Excel.decodeBytes(bytes.buffer.asUint8List());
+
+      final sheet = excel.tables.keys.first;
+      final table = excel.tables[sheet];
+
+      if (table == null) return;
+
+      List<Shelter> shelters = [];
+
+      // 첫 번째 행은 헤더이므로 건너뛰기
+      for (var i = 1; i < table.rows.length; i++) {
+        final row = table.rows[i];
+
+        if (row.length >= 4) {
+          final name = row[0]?.value?.toString() ?? '';
+          final address = row[1]?.value?.toString() ?? '';
+          final longitude = double.tryParse(row[2]?.value?.toString() ?? '0') ?? 0.0;
+          final latitude = double.tryParse(row[3]?.value?.toString() ?? '0') ?? 0.0;
+
+          if (name.isNotEmpty && latitude != 0 && longitude != 0) {
+            shelters.add(Shelter(
+              name: name,
+              address: address,
+              longitude: longitude,
+              latitude: latitude,
+            ));
+          }
+        }
+      }
+
+      print('✅ 전체 대피소: ${shelters.length}개 로드 완료');
+
+      setState(() {
+        allShelters = shelters;
+        _filterNearbyShelters();
+        print('✅ 근처 대피소: ${nearbyShelters.length}개');
+      });
+    } catch (e) {
+      print('❌ 대피소 로드 실패: $e');
+    }
+  }
+
+  void _filterNearbyShelters() {
+    final currentLocation = widget.profile.currentLocation;
+
+    if (currentLocation == null || !currentLocation.isValid) {
+      nearbyShelters = [];
+      return;
+    }
+
+    nearbyShelters = allShelters.where((shelter) {
+      final distance = shelter.distanceFrom(
+        currentLocation.latitude,
+        currentLocation.longitude,
+      );
+      return distance <= searchRadiusKm;
+    }).toList();
+
+    // 거리순으로 정렬
+    nearbyShelters.sort((a, b) {
+      final distA = a.distanceFrom(
+        currentLocation.latitude,
+        currentLocation.longitude,
+      );
+      final distB = b.distanceFrom(
+        currentLocation.latitude,
+        currentLocation.longitude,
+      );
+      return distA.compareTo(distB);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ✅ 현재 위치 / 관심 지역 상태 계산
     final currentLocation = widget.profile.currentLocation;
-    final bool hasCurrentLocation =
-        currentLocation != null && currentLocation.isValid;
+    final bool hasCurrentLocation = currentLocation != null && currentLocation.isValid;
+    final bool hasInterestedAreas = widget.profile.interestedAreas.isNotEmpty;
 
-    final bool hasInterestedAreas =
-        widget.profile.interestedAreas.isNotEmpty;
-
-    // ✅ 상단 카드 제목
     final String headerTitle = () {
       if (hasCurrentLocation) return '현재 위치 모니터링';
       if (hasInterestedAreas) return '관심 지역 모니터링';
       return '관심 지역 미설정';
     }();
 
-    // ✅ 메인 텍스트 (주소)
     final String mainAreaText = () {
       if (hasCurrentLocation) {
         return currentLocation!.address;
       } else if (hasInterestedAreas) {
-        // 첫 번째 관심 지역
-        final InterestedArea area = widget.profile.interestedAreas.first;
-        return area.address;
+        return widget.profile.interestedAreas.first.address;
       } else {
         return '하단의 "내 정보"에서 관심 지역을 등록하면\n해당 지역의 침수 위험을 자동으로 알려드려요.';
       }
     }();
 
-    // ✅ 서브 텍스트 (이유/설명)
     final String subAreaText = () {
       if (hasCurrentLocation) {
         return '현재 GPS 기준으로 침수 위험을 모니터링 중입니다.';
       } else if (hasInterestedAreas) {
-        final InterestedArea area = widget.profile.interestedAreas.first;
-        // "#집 #직장 ..." 이런 식의 해시태그 문자열
-        final reasons = area.hashtagReasons;
-        return reasons.isNotEmpty
-            ? '등록 이유: $reasons'
-            : '사용자가 미리 등록한 관심 지역입니다.';
+        final reasons = widget.profile.interestedAreas.first.hashtagReasons;
+        return reasons.isNotEmpty ? '등록 이유: $reasons' : '사용자가 미리 등록한 관심 지역입니다.';
       } else {
         return '';
       }
     }();
+
+    double centerLat = 37.5665;
+    double centerLng = 126.9780;
+
+    if (hasCurrentLocation) {
+      centerLat = currentLocation!.latitude;
+      centerLng = currentLocation!.longitude;
+    }
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // 🔴 상단 경고/모니터링 카드
+            // 상단 카드
             Container(
-              margin: const EdgeInsets.only(
-                bottom: 20.0,
-                top: 60.0,
-                left: 20.0,
-                right: 20.0,
-              ),
+              margin: const EdgeInsets.only(bottom: 20.0, top: 60.0, left: 20.0, right: 20.0),
               padding: const EdgeInsets.all(24.0),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -96,19 +179,11 @@ class _RandingPageState extends State<RandingPage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
                       const SizedBox(width: 12),
                       Text(
                         headerTitle,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -131,11 +206,7 @@ class _RandingPageState extends State<RandingPage> {
                           const SizedBox(height: 6),
                           Text(
                             subAreaText,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.85),
-                              fontSize: 13,
-                              height: 1.3,
-                            ),
+                            style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13, height: 1.3),
                           ),
                         ],
                       ],
@@ -145,96 +216,29 @@ class _RandingPageState extends State<RandingPage> {
               ),
             ),
 
-            // 🌎 지도/시각화 영역 (기존 코드 그대로)
+            // Tmap
+            _buildTmapView(centerLat, centerLng),
+
+            // 범례
             Container(
-              height: 400,
-              margin: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Stack(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.red.shade100.withOpacity(0.5),
-                          Colors.blue.shade100.withOpacity(0.5),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                      borderRadius: BorderRadius.circular(20.0),
-                    ),
-                  ),
-                  Positioned(
-                    left: 100,
-                    top: 150,
-                    child: Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade700,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 150,
-                    top: 80,
-                    child: Icon(
-                      Icons.location_pin,
-                      color: Colors.red.shade700,
-                      size: 40,
-                    ),
-                  ),
-                  Positioned(
-                    left: 60,
-                    top: 180,
-                    child: Icon(
-                      Icons.location_pin,
-                      color: Colors.red.shade700,
-                      size: 40,
-                    ),
-                  ),
-                  Positioned(
-                    right: 60,
-                    bottom: 150,
-                    child: Icon(
-                      Icons.location_pin,
-                      color: Colors.red.shade700,
-                      size: 40,
-                    ),
-                  ),
-                  // 범례
-                  Positioned(
-                    bottom: 16,
-                    left: 16,
-                    right: 16,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 20,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(30.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildLegendItem(Colors.blue, '내 위치'),
-                          _buildLegendItem(Colors.red.shade700, '대피소'),
-                          _buildLegendItem(Colors.pink.shade200, '침수 지역'),
-                        ],
-                      ),
-                    ),
-                  ),
+                  _buildLegendItem(Colors.blue, '내 위치'),
+                  _buildLegendItem(Colors.red.shade700, '대피소 (${nearbyShelters.length})'),
                 ],
               ),
             ),
@@ -250,15 +254,12 @@ class _RandingPageState extends State<RandingPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.red,
-                  ),
+                  const Icon(Icons.warning_amber_rounded, color: Colors.red),
                   const SizedBox(width: 5),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      '침수·재난 상황 발생 시 AI 비서와 함께\n가까운 대피소와 안전한 행동 요령을 확인하세요.',
-                      style: TextStyle(fontSize: 14),
+                      '반경 ${searchRadiusKm}km 내 대피소 ${nearbyShelters.length}개\n침수·재난 상황 발생 시 AI 비서와 함께 가까운 대피소를 확인하세요.',
+                      style: const TextStyle(fontSize: 14),
                       softWrap: true,
                     ),
                   ),
@@ -270,6 +271,204 @@ class _RandingPageState extends State<RandingPage> {
       ),
     );
   }
+  Widget _buildTmapView(double lat, double lng) {
+    // 대피소 로드가 완료될 때까지 로딩 표시
+    if (allShelters.isEmpty) {
+      return Container(
+        height: 400,
+        margin: const EdgeInsets.symmetric(horizontal: 16.0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20.0),
+          color: Colors.white,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.blue),
+              SizedBox(height: 16),
+              Text('대피소 데이터 로딩 중...', style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 400,
+      margin: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20.0),
+            child: InAppWebView(
+              // key 제거 - WebView를 재생성하지 않음
+              initialData: InAppWebViewInitialData(
+                data: _getTmapHtml(lat, lng),
+              ),
+              initialSettings: InAppWebViewSettings(
+                javaScriptEnabled: true,
+                domStorageEnabled: true,
+                useHybridComposition: true,
+                cacheEnabled: true, // 캐시 활성화
+                clearCache: false,
+                mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+              ),
+              onWebViewCreated: (controller) {
+                _webViewController = controller;
+              },
+              onLoadStop: (controller, url) async {
+                print('✅ WebView 로드 완료');
+                await Future.delayed(const Duration(milliseconds: 300));
+                setState(() {
+                  _isMapLoading = false;
+                });
+              },
+              onConsoleMessage: (controller, consoleMessage) {
+                print('📱 Tmap: ${consoleMessage.message}');
+              },
+            ),
+          ),
+          if (_isMapLoading)
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20.0),
+                color: Colors.white,
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Colors.blue),
+                    SizedBox(height: 16),
+                    Text('지도 로딩 중...', style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  String _getTmapHtml(double lat, double lng) {
+    print('📍 HTML 생성 - 근처 대피소: ${nearbyShelters.length}개');
+
+    // 대피소 마커 데이터를 JavaScript 배열로 변환
+    final sheltersJson = nearbyShelters.map((shelter) {
+      final escapedName = shelter.name
+          .replaceAll('\\', '\\\\')
+          .replaceAll('"', '\\"')
+          .replaceAll("'", "\\'")
+          .replaceAll('\n', ' ');
+      return '{lat: ${shelter.latitude}, lng: ${shelter.longitude}, name: "$escapedName"}';
+    }).join(',');
+
+    final blueMarkerSvg = '''<svg width="32" height="40" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C9.373 0 4 5.373 4 12c0 9 12 28 12 28s12-19 12-28c0-6.627-5.373-12-12-12z" fill="#1E90FF"/><circle cx="16" cy="12" r="5" fill="white"/></svg>''';
+
+    final redMarkerSvg = '''<svg width="32" height="40" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C9.373 0 4 5.373 4 12c0 9 12 28 12 28s12-19 12-28c0-6.627-5.373-12-12-12z" fill="#DC143C"/><circle cx="16" cy="12" r="5" fill="white"/></svg>''';
+
+    final blueMarkerBase64 = base64Encode(utf8.encode(blueMarkerSvg));
+    final redMarkerBase64 = base64Encode(utf8.encode(redMarkerSvg));
+
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        #map_div { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="map_div"></div>
+    <script src="https://apis.openapi.sk.com/tmap/vectorjs?version=1&appKey=nMfEZNvtFKaTbAvHKprLE1cX5kzq41dC3omd9Hwi"></script>
+    <script type="text/javascript">
+        var map;
+        var markers = [];
+        var shelters = [$sheltersJson];
+        
+        console.log('=== 디버깅 시작 ===');
+        console.log('대피소 개수:', shelters.length);
+        console.log('대피소 전체:', JSON.stringify(shelters));
+        console.log('중심 좌표: $lat, $lng');
+        
+        function initTmap() {
+            try {
+                map = new Tmapv3.Map("map_div", {
+                    center: new Tmapv3.LatLng($lat, $lng),
+                    width: "100%",
+                    height: "100%",
+                    zoom: 14  // 줌 레벨을 낮춰서 더 넓은 범위 확인
+                });
+                
+                console.log('지도 생성 완료');
+                console.log('지도 중심:', map.getCenter());
+                console.log('지도 줌:', map.getZoom());
+                
+                // 내 위치 마커 (파란색)
+                var myMarker = new Tmapv3.Marker({
+                    position: new Tmapv3.LatLng($lat, $lng),
+                    icon: "data:image/svg+xml;base64,$blueMarkerBase64",
+                    iconSize: new Tmapv3.Size(32, 40),
+                    map: map
+                });
+                
+                console.log('내 위치 마커 생성:', myMarker.getPosition());
+                
+                // 대피소 마커 추가
+                console.log('=== 마커 추가 시작 ===');
+                for (var i = 0; i < shelters.length; i++) {
+                    var s = shelters[i];
+                    console.log('마커 ' + i + ':', s.name, '좌표:', s.lat + ', ' + s.lng);
+                    
+                    try {
+                        var position = new Tmapv3.LatLng(s.lat, s.lng);
+                        console.log('  - LatLng 객체:', position);
+                        
+                        var marker = new Tmapv3.Marker({
+                            position: position,
+                            icon: "data:image/svg+xml;base64,$redMarkerBase64",
+                            iconSize: new Tmapv3.Size(28, 36),
+                            label: s.name,
+                            map: map
+                        });
+                        
+                        console.log('  - 마커 생성 완료:', marker.getPosition());
+                        markers.push(marker);
+                        
+                    } catch(markerError) {
+                        console.error('  - 마커 생성 실패:', markerError);
+                    }
+                }
+                
+                console.log('=== 마커 추가 완료: ' + markers.length + '개 ===');
+                
+                // 모든 마커가 보이도록 지도 범위 조정
+                if (markers.length > 0) {
+                    var bounds = new Tmapv3.LatLngBounds();
+                    bounds.extend(new Tmapv3.LatLng($lat, $lng)); // 내 위치 포함
+                    for (var i = 0; i < markers.length; i++) {
+                        bounds.extend(markers[i].getPosition());
+                    }
+                    map.fitBounds(bounds);
+                    console.log('지도 범위 조정 완료');
+                }
+                
+            } catch(e) {
+                console.error('에러 발생:', e);
+                console.error('에러 스택:', e.stack);
+            }
+        }
+        
+        window.onload = initTmap;
+    </script>
+</body>
+</html>
+    ''';
+  }
 
   Widget _buildLegendItem(Color color, String label) {
     return Row(
@@ -277,16 +476,10 @@ class _RandingPageState extends State<RandingPage> {
         Container(
           width: 12,
           height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12),
-        ),
+        Text(label, style: const TextStyle(fontSize: 12)),
       ],
     );
   }

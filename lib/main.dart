@@ -28,6 +28,8 @@ import 'package:pbl_b_app/screens/main_screen.dart';
 // 로컬 DB인 Hive 사용
 import 'services/hive_service.dart';
 
+import 'package:kakao_map_plugin/kakao_map_plugin.dart';
+
 // ================== 전역 상수/키 ==================
 const String apiBaseUrl = 'http://10.0.2.2:8000';
 const String locationTaskName = 'updateLocationTask';
@@ -38,6 +40,8 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 // ================== main() ==================
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  AuthRepository.initialize(appKey: 'bae9dc4a7712033a1610e03f650b078c');
 
   await Firebase.initializeApp();
 
@@ -247,6 +251,22 @@ class _MyAppState extends State<MyApp> {
   Future<UserProfile> _updateCurrentLocationInProfile(
       UserProfile profile) async {
     debugPrint('LOC1: _updateCurrentLocationInProfile 시작');
+    // ========== 🎯 데모용: 서초구로 고정 ==========
+    final currentLoc = CurrentLocation(
+      address: '서울특별시 서초구',
+      latitude: 37.4837,  // 서초구 대략적인 좌표
+      longitude: 127.0324,
+      isAutoDetected: false, // 데모용이므로 false
+    );
+
+    final updated = profile.copyWith(
+      currentLocation: currentLoc,
+    );
+
+    await widget.hiveService.saveProfile(updated);
+
+    debugPrint('LOC3: currentLocation 저장 완료 (데모): $currentLoc');
+    return updated;
     try {
       final position = await _determinePosition();
       debugPrint('LOC2: Position 획득: ${position.latitude}, ${position.longitude}');
